@@ -24,15 +24,16 @@ import org.apache.flink.kubernetes.operator.exception.ReconciliationException;
 import org.apache.flink.util.Preconditions;
 
 import io.fabric8.kubernetes.api.model.HasMetadata;
+import io.fabric8.kubernetes.api.model.IntOrString;
 import io.fabric8.kubernetes.api.model.ObjectMeta;
 import io.fabric8.kubernetes.api.model.OwnerReference;
 import io.fabric8.kubernetes.api.model.OwnerReferenceBuilder;
 import io.fabric8.kubernetes.api.model.apps.Deployment;
-import io.fabric8.kubernetes.api.model.networking.v1.HTTPIngressRuleValueBuilder;
-import io.fabric8.kubernetes.api.model.networking.v1.Ingress;
-import io.fabric8.kubernetes.api.model.networking.v1.IngressBuilder;
-import io.fabric8.kubernetes.api.model.networking.v1.IngressRule;
-import io.fabric8.kubernetes.api.model.networking.v1.IngressRuleBuilder;
+import io.fabric8.kubernetes.api.model.networking.v1beta1.HTTPIngressRuleValueBuilder;
+import io.fabric8.kubernetes.api.model.networking.v1beta1.Ingress;
+import io.fabric8.kubernetes.api.model.networking.v1beta1.IngressBuilder;
+import io.fabric8.kubernetes.api.model.networking.v1beta1.IngressRule;
+import io.fabric8.kubernetes.api.model.networking.v1beta1.IngressRuleBuilder;
 import io.fabric8.kubernetes.client.KubernetesClient;
 import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
@@ -110,14 +111,9 @@ public class IngressUtils {
         ingressRuleBuilder.withHttp(
                 new HTTPIngressRuleValueBuilder()
                         .addNewPath()
-                        .withPathType("ImplementationSpecific")
                         .withNewBackend()
-                        .withNewService()
-                        .withName(clusterId + REST_SVC_NAME_SUFFIX)
-                        .withNewPort()
-                        .withNumber(restPort)
-                        .endPort()
-                        .endService()
+                        .withServiceName(clusterId + REST_SVC_NAME_SUFFIX)
+                        .withServicePort(new IntOrString(restPort))
                         .endBackend()
                         .endPath()
                         .build());

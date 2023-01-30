@@ -364,6 +364,7 @@ under the License.
                     <commitIdGenerationMode>full</commitIdGenerationMode>
                 </configuration>
             </plugin>
+            <!--
             <plugin>
                 <artifactId>maven-antrun-plugin</artifactId>
                 <executions>
@@ -407,6 +408,7 @@ under the License.
                     </execution>
                 </executions>
             </plugin>
+            -->
         </plugins>
     </build>
     <profiles>
