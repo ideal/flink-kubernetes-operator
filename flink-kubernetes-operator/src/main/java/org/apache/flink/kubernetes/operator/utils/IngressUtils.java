@@ -29,11 +29,10 @@ import io.fabric8.kubernetes.api.model.ObjectMeta;
 import io.fabric8.kubernetes.api.model.OwnerReference;
 import io.fabric8.kubernetes.api.model.OwnerReferenceBuilder;
 import io.fabric8.kubernetes.api.model.apps.Deployment;
-import io.fabric8.kubernetes.api.model.networking.v1beta1.HTTPIngressRuleValueBuilder;
-import io.fabric8.kubernetes.api.model.networking.v1beta1.Ingress;
-import io.fabric8.kubernetes.api.model.networking.v1beta1.IngressBuilder;
-import io.fabric8.kubernetes.api.model.networking.v1beta1.IngressRule;
-import io.fabric8.kubernetes.api.model.networking.v1beta1.IngressRuleBuilder;
+import io.fabric8.kubernetes.api.model.networking.v1.HTTPIngressRuleValueBuilder;
+import io.fabric8.kubernetes.api.model.networking.v1.IngressBuilder;
+import io.fabric8.kubernetes.api.model.networking.v1.IngressRule;
+import io.fabric8.kubernetes.api.model.networking.v1.IngressRuleBuilder;
 import io.fabric8.kubernetes.client.KubernetesClient;
 import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
@@ -66,18 +65,35 @@ public class IngressUtils {
             KubernetesClient client) {
 
         if (spec.getIngress() != null) {
-            Ingress ingress =
-                    new IngressBuilder()
-                            .withNewMetadata()
-                            .withAnnotations(spec.getIngress().getAnnotations())
-                            .withName(objectMeta.getName())
-                            .withNamespace(objectMeta.getNamespace())
-                            .endMetadata()
-                            .withNewSpec()
-                            .withIngressClassName(spec.getIngress().getClassName())
-                            .withRules(getIngressRule(objectMeta, spec, effectiveConfig))
-                            .endSpec()
-                            .build();
+            HasMetadata ingress;
+            if (ingressInNetworkingV1(client)) {
+                ingress =
+                        new IngressBuilder()
+                                .withNewMetadata()
+                                .withAnnotations(spec.getIngress().getAnnotations())
+                                .withName(objectMeta.getName())
+                                .withNamespace(objectMeta.getNamespace())
+                                .endMetadata()
+                                .withNewSpec()
+                                .withIngressClassName(spec.getIngress().getClassName())
+                                .withRules(getIngressRule(objectMeta, spec, effectiveConfig))
+                                .endSpec()
+                                .build();
+            } else {
+                ingress =
+                        new io.fabric8.kubernetes.api.model.networking.v1beta1.IngressBuilder()
+                                .withNewMetadata()
+                                .withAnnotations(spec.getIngress().getAnnotations())
+                                .withName(objectMeta.getName())
+                                .withNamespace(objectMeta.getNamespace())
+                                .endMetadata()
+                                .withNewSpec()
+                                .withIngressClassName(spec.getIngress().getClassName())
+                                .withRules(
+                                        getIngressRuleForV1beta1(objectMeta, spec, effectiveConfig))
+                                .endSpec()
+                                .build();
+            }
 
             Deployment deployment =
                     client.apps()
@@ -110,6 +126,52 @@ public class IngressUtils {
         IngressRuleBuilder ingressRuleBuilder = new IngressRuleBuilder();
         ingressRuleBuilder.withHttp(
                 new HTTPIngressRuleValueBuilder()
+                        .addNewPath()
+                        .withPathType("ImplementationSpecific")
+                        .withNewBackend()
+                        .withNewService()
+                        .withName(clusterId + REST_SVC_NAME_SUFFIX)
+                        .withNewPort()
+                        .withNumber(restPort)
+                        .endPort()
+                        .endService()
+                        .endBackend()
+                        .endPath()
+                        .build());
+
+        if (!StringUtils.isBlank(ingressUrl.getHost())) {
+            ingressRuleBuilder.withHost(ingressUrl.getHost());
+        }
+
+        if (!StringUtils.isBlank(ingressUrl.getPath())) {
+            ingressRuleBuilder
+                    .editHttp()
+                    .editFirstPath()
+                    .withPath(ingressUrl.getPath())
+                    .endPath()
+                    .endHttp();
+        }
+        return ingressRuleBuilder.build();
+    }
+
+    private static io.fabric8.kubernetes.api.model.networking.v1beta1.IngressRule
+            getIngressRuleForV1beta1(
+                    ObjectMeta objectMeta,
+                    FlinkDeploymentSpec spec,
+                    Configuration effectiveConfig) {
+        final String clusterId = objectMeta.getName();
+        final int restPort = effectiveConfig.getInteger(RestOptions.PORT);
+
+        URL ingressUrl =
+                getIngressUrl(
+                        spec.getIngress().getTemplate(),
+                        objectMeta.getName(),
+                        objectMeta.getNamespace());
+
+        io.fabric8.kubernetes.api.model.networking.v1beta1.IngressRuleBuilder ingressRuleBuilder =
+                new io.fabric8.kubernetes.api.model.networking.v1beta1.IngressRuleBuilder();
+        ingressRuleBuilder.withHttp(
+                new io.fabric8.kubernetes.api.model.networking.v1beta1.HTTPIngressRuleValueBuilder()
                         .addNewPath()
                         .withNewBackend()
                         .withServiceName(clusterId + REST_SVC_NAME_SUFFIX)
@@ -170,5 +232,17 @@ public class IngressUtils {
             url = "http://" + url;
         }
         return url;
+    }
+
+    private static boolean ingressInNetworkingV1(KubernetesClient client) {
+        // networking.k8s.io/v1/Ingress is available in K8s 1.19
+        // See:
+        // https://kubernetes.io/docs/reference/using-api/deprecation-guide/
+        // https://kubernetes.io/blog/2021/07/14/upcoming-changes-in-kubernetes-1-22/
+        return (client.getKubernetesVersion().getMajor()
+                                + "."
+                                + client.getKubernetesVersion().getMinor())
+                        .compareTo("1.19")
+                >= 0;
     }
 }
